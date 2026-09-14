@@ -27,7 +27,7 @@ import {
   MessageCircle,
   Upload,
 } from "lucide-react";
-import { supabase, isConfigured } from "./lib/supabaseClient";
+import { supabase, isConfigured } from "./supabaseClient";
 import SupabaseSetupScreen from "./SupabaseSetupScreen";
 
 const PRODUCT_ICONS = { Rocket, Orbit, Zap, Cloud, Box, Package, Sunrise, Gem, CircleDot, Star, Share2, Triangle, Circle };
@@ -478,7 +478,7 @@ function TeamTab({ profile }) {
   const [downlineLoading, setDownlineLoading] = useState(true);
   const [downlineError, setDownlineError] = useState("");
   const code = profile.referral_code;
-  const inviteLink = `${window.location.origin}/register?ref=${code}`;
+  const inviteLink = `\( {window.location.origin}/register?ref= \){code}`;
 
   useEffect(() => {
     let mounted = true;
@@ -988,7 +988,7 @@ function AdminConsole({ onLogout }) {
     setError("");
     try {
       const ext = file.name.split(".").pop() || "jpg";
-      const path = `${product.id}-${Date.now()}.${ext}`;
+      const path = `\( {product.id}- \){Date.now()}.${ext}`;
 
       const { error: uploadErr } = await supabase.storage
         .from("product-images")
@@ -1521,4 +1521,4 @@ export default function Space10App() {
       )}
     </div>
   );
-}
+      }
