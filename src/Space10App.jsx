@@ -26,7 +26,7 @@ import {
   Circle,
   MessageCircle,
 } from "lucide-react";
-import { supabase, isConfigured } from "./supabaseClient";
+import { supabase, isConfigured } from "./lib/supabaseClient";
 import SupabaseSetupScreen from "./SupabaseSetupScreen";
 
 const PRODUCT_ICONS = { Rocket, Orbit, Zap, Cloud, Box, Package, Sunrise, Gem, CircleDot, Star, Share2, Triangle, Circle };
@@ -77,7 +77,7 @@ function formatUGX(amount) {
 }
 
 // Accepts 07XXXXXXXX, 2567XXXXXXXX, or +2567XXXXXXXX and normalizes to the
-// +256XXXXXXXXX format Supabase phone auth expects.
+// +256XXXXXXXXX format used everywhere in the UI and passed to Mobile Money.
 function normalizePhoneUG(input) {
   const trimmed = (input || "").trim();
   const digits = trimmed.replace(/\D/g, "");
@@ -86,6 +86,22 @@ function normalizePhoneUG(input) {
   else if (digits.length === 10 && digits.startsWith("0")) normalized = `+256${digits.slice(1)}`;
   else if (digits.length === 12 && digits.startsWith("256")) normalized = `+${digits}`;
   return normalized && /^\+256\d{9}$/.test(normalized) ? normalized : null;
+}
+
+// Supabase's Phone auth provider requires an SMS provider (Twilio, etc.)
+// to be configured, which this project doesn't have -- attempting
+// supabase.auth.signUp({ phone }) on a project without it enabled fails
+// with "Phone signups are disabled". Workaround: authenticate with Email
+// auth instead, using a synthetic, non-deliverable email derived from the
+// phone number as the "email" Supabase's auth system requires. The real
+// phone number is never lost -- it's stored in both the signup metadata
+// and profiles.phone_number (via the handle_new_user trigger), and is
+// what's actually shown anywhere in the UI. Nobody ever sees or needs
+// this synthetic address; it only exists to satisfy Supabase Auth's
+// email-shaped identifier.
+function phoneToAuthEmail(normalizedPhone) {
+  const digits = normalizedPhone.replace(/\D/g, ""); // "+256701234567" -> "256701234567"
+  return `${digits}@space10.vercel.app`;
 }
 
 const WHATSAPP_GROUP_URL = "https://chat.whatsapp.com/EysSGOrzIyC6agfTmIt5ip?s=cl&p=a&mlu=4&ilr=4";
@@ -1201,7 +1217,7 @@ export default function Space10App() {
 
     setAuthBusy(true);
     const { error } = await supabase.auth.signUp({
-      phone: normalizedPhone,
+      email: phoneToAuthEmail(normalizedPhone),
       password,
       options: { data: { full_name: cleanName, phone_number: normalizedPhone } },
     });
@@ -1218,7 +1234,7 @@ export default function Space10App() {
     if (!normalizedPhone || !password) return setAuthError("Enter your phone number and password.");
 
     setAuthBusy(true);
-    const { error } = await supabase.auth.signInWithPassword({ phone: normalizedPhone, password });
+    const { error } = await supabase.auth.signInWithPassword({ email: phoneToAuthEmail(normalizedPhone), password });
     setAuthBusy(false);
 
     if (error) return setAuthError(error.message);
@@ -1381,4 +1397,4 @@ export default function Space10App() {
       )}
     </div>
   );
-        }
+}
