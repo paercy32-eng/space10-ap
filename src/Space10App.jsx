@@ -25,8 +25,9 @@ import {
   Triangle,
   Circle,
   MessageCircle,
+  Upload,
 } from "lucide-react";
-import { supabase, isConfigured } from "./supabaseClient";
+import { supabase, isConfigured } from "./lib/supabaseClient";
 import SupabaseSetupScreen from "./SupabaseSetupScreen";
 
 const PRODUCT_ICONS = { Rocket, Orbit, Zap, Cloud, Box, Package, Sunrise, Gem, CircleDot, Star, Share2, Triangle, Circle };
@@ -222,10 +223,11 @@ function AuthShell({ children }) {
   );
 }
 
-function RegisterScreen({ onRegister, goToLogin, error, busy }) {
+function RegisterScreen({ onRegister, goToLogin, error, busy, defaultReferralCode }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [referralCode, setReferralCode] = useState(defaultReferralCode || "");
 
   return (
     <AuthShell>
@@ -234,8 +236,9 @@ function RegisterScreen({ onRegister, goToLogin, error, busy }) {
         <FieldInput label="Full name" placeholder="e.g. Sarah Nakato" value={name} onChange={(e) => setName(e.target.value)} />
         <FieldInput label="Phone number" placeholder="e.g. 0712345678" value={phone} onChange={(e) => setPhone(e.target.value)} />
         <FieldInput label="Password" type="password" placeholder="Create a password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <FieldInput label="Referral code (optional)" placeholder="e.g. AB12CD34" value={referralCode} onChange={(e) => setReferralCode(e.target.value)} />
         {error && <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: tokens.accentCoral, marginBottom: 10 }}>{error}</div>}
-        <PrimaryButton style={{ width: "100%" }} disabled={busy} onClick={() => onRegister({ name, phone, password })}>
+        <PrimaryButton style={{ width: "100%" }} disabled={busy} onClick={() => onRegister({ name, phone, password, referralCode })}>
           {busy ? "Creating account…" : "Register"}
         </PrimaryButton>
         <div style={{ textAlign: "center", marginTop: 16, fontFamily: "'Inter', sans-serif", fontSize: 13, color: tokens.textMuted }}>
@@ -281,8 +284,26 @@ function LoginScreen({ onLogin, goToRegister, onOpenSetup, error, notice, busy }
 // ---------------------------------------------------------------------------
 // User-facing tabs
 // ---------------------------------------------------------------------------
-function ProductArt({ icon, gradient }) {
+function ProductArt({ icon, gradient, imageUrl }) {
   const Icon = PRODUCT_ICONS[icon] || Package;
+
+  if (imageUrl) {
+    return (
+      <img
+        src={imageUrl}
+        alt=""
+        style={{
+          aspectRatio: "1 / 1",
+          width: "100%",
+          borderRadius: 14,
+          objectFit: "cover",
+          marginBottom: 12,
+          display: "block",
+        }}
+      />
+    );
+  }
+
   return (
     <div
       style={{
@@ -385,7 +406,7 @@ function HomeTab({ products, balance, profile, onCheckin, onPurchase }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         {products.map((p) => (
           <Card key={p.id} style={{ padding: 12 }}>
-            <ProductArt icon={p.icon} gradient={p.gradient} />
+            <ProductArt icon={p.icon} gradient={p.gradient} imageUrl={p.image_url} />
             <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 14, color: tokens.textPrimary, fontWeight: 600, lineHeight: 1.2 }}>
               {p.name}
             </div>
@@ -457,7 +478,7 @@ function TeamTab({ profile }) {
   const [downlineLoading, setDownlineLoading] = useState(true);
   const [downlineError, setDownlineError] = useState("");
   const code = profile.referral_code;
-  const inviteLink = `https://space10.app/register?ref=${code}`;
+  const inviteLink = `${window.location.origin}/register?ref=${code}`;
 
   useEffect(() => {
     let mounted = true;
@@ -892,9 +913,11 @@ function AdminConsole({ onLogout }) {
   const [deposits, setDeposits] = useState([]);
   const [withdrawals, setWithdrawals] = useState([]);
   const [users, setUsers] = useState([]);
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actioningId, setActioningId] = useState(null);
+  const [uploadingProductId, setUploadingProductId] = useState(null);
 
   const loadPending = useCallback(async () => {
     setError("");
@@ -931,17 +954,62 @@ function AdminConsole({ onLogout }) {
     setUsers(data || []);
   }, []);
 
+  const loadProducts = useCallback(async () => {
+    const { data } = await supabase.from("products").select("*").order("price", { ascending: true });
+    setProducts(data || []);
+  }, []);
+
   useEffect(() => {
     loadPending();
     loadUsers();
+    loadProducts();
     const channel = supabase
       .channel("admin-pending")
       .on("postgres_changes", { event: "*", schema: "public", table: "deposits" }, () => loadPending())
       .on("postgres_changes", { event: "*", schema: "public", table: "withdrawals" }, () => loadPending())
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadUsers())
+      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => loadProducts())
       .subscribe();
     return () => supabase.removeChannel(channel);
-  }, [loadPending, loadUsers]);
+  }, [loadPending, loadUsers, loadProducts]);
+
+  const handleImageUpload = async (product, file) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Image is too large — please choose one under 5MB.");
+      return;
+    }
+
+    setUploadingProductId(product.id);
+    setError("");
+    try {
+      const ext = file.name.split(".").pop() || "jpg";
+      const path = `${product.id}-${Date.now()}.${ext}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from("product-images")
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (uploadErr) throw uploadErr;
+
+      const { data: publicUrlData } = supabase.storage.from("product-images").getPublicUrl(path);
+
+      const { error: updateErr } = await supabase
+        .from("products")
+        .update({ image_url: publicUrlData.publicUrl })
+        .eq("id", product.id);
+      if (updateErr) throw updateErr;
+
+      await loadProducts();
+    } catch (err) {
+      setError(err.message || "Image upload failed.");
+    } finally {
+      setUploadingProductId(null);
+    }
+  };
 
   const runAction = async (id, rpcName, paramName, failMessage) => {
     setActioningId(id);
@@ -985,6 +1053,50 @@ function AdminConsole({ onLogout }) {
             </div>
             <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: tokens.textMuted, marginTop: 4 }}>
               {u.phone_number} · Joined {new Date(u.created_at).toLocaleDateString()}
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      <SectionTitle sub="Tap a product's photo to upload one straight from your gallery. Square images work best.">
+        Manage products ({products.length})
+      </SectionTitle>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 22 }}>
+        {products.map((p) => (
+          <Card key={p.id} style={{ padding: 10 }}>
+            <label style={{ display: "block", cursor: "pointer", position: "relative" }}>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => handleImageUpload(p, e.target.files?.[0])}
+                style={{ display: "none" }}
+                disabled={uploadingProductId === p.id}
+              />
+              <ProductArt icon={p.icon} gradient={p.gradient} imageUrl={p.image_url} />
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 20,
+                  right: 6,
+                  background: uploadingProductId === p.id ? tokens.accentGold : "rgba(14,16,41,0.75)",
+                  borderRadius: 999,
+                  padding: "5px 9px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                <Upload size={12} color={uploadingProductId === p.id ? "#0E1029" : tokens.textPrimary} />
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, color: uploadingProductId === p.id ? "#0E1029" : tokens.textPrimary }}>
+                  {uploadingProductId === p.id ? "Uploading…" : p.image_url ? "Change" : "Add photo"}
+                </span>
+              </div>
+            </label>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, color: tokens.textPrimary, fontWeight: 600, marginTop: 8 }}>
+              {p.name}
+            </div>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: tokens.textMuted, marginTop: 2 }}>
+              {formatUGX(p.price)}
             </div>
           </Card>
         ))}
@@ -1042,6 +1154,14 @@ function AdminConsole({ onLogout }) {
 // ---------------------------------------------------------------------------
 // App shell
 // ---------------------------------------------------------------------------
+function getReferralCodeFromUrl() {
+  try {
+    return new URLSearchParams(window.location.search).get("ref") || "";
+  } catch {
+    return "";
+  }
+}
+
 export default function Space10App() {
   const [configured, setConfigured] = useState(isConfigured());
   const [showSetupScreen, setShowSetupScreen] = useState(false);
@@ -1051,7 +1171,10 @@ export default function Space10App() {
   const [transactions, setTransactions] = useState([]);
   const [products, setProducts] = useState([]);
   const [userProducts, setUserProducts] = useState([]);
-  const [screen, setScreen] = useState("login"); // login | register | app | admin
+  const [referralCodeFromUrl] = useState(getReferralCodeFromUrl);
+  // A link like /register?ref=CODE should land straight on the Register
+  // form, pre-filled -- not require an extra tap from the login screen.
+  const [screen, setScreen] = useState(() => (getReferralCodeFromUrl() ? "register" : "login")); // login | register | app | admin
   const [tab, setTab] = useState("home");
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
@@ -1208,10 +1331,11 @@ export default function Space10App() {
     return () => supabase.removeChannel(channel);
   }, [session, loadProfileAndTransactions]);
 
-  const handleRegister = async ({ name, phone, password }) => {
+  const handleRegister = async ({ name, phone, password, referralCode }) => {
     setAuthError("");
     const cleanName = name.trim();
     const normalizedPhone = normalizePhoneUG(phone);
+    const cleanReferralCode = (referralCode || "").trim().toUpperCase();
     if (!cleanName || !password.trim()) return setAuthError("Fill in all fields.");
     if (!normalizedPhone) return setAuthError("Enter a valid Ugandan phone number, e.g. 0712345678.");
 
@@ -1219,7 +1343,7 @@ export default function Space10App() {
     const { error } = await supabase.auth.signUp({
       email: phoneToAuthEmail(normalizedPhone),
       password,
-      options: { data: { full_name: cleanName, phone_number: normalizedPhone } },
+      options: { data: { full_name: cleanName, phone_number: normalizedPhone, referral_code: cleanReferralCode } },
     });
     setAuthBusy(false);
 
@@ -1356,7 +1480,7 @@ export default function Space10App() {
         <LoginScreen onLogin={handleLogin} goToRegister={() => { setAuthError(""); setScreen("register"); }} onOpenSetup={() => setShowSetupScreen(true)} error={authError} notice={authNotice} busy={authBusy} />
       )}
       {screen === "register" && (
-        <RegisterScreen onRegister={handleRegister} goToLogin={() => { setAuthError(""); setScreen("login"); }} error={authError} busy={authBusy} />
+        <RegisterScreen onRegister={handleRegister} goToLogin={() => { setAuthError(""); setScreen("login"); }} error={authError} busy={authBusy} defaultReferralCode={referralCodeFromUrl} />
       )}
       {screen === "admin" && <AdminConsole onLogout={handleLogout} />}
 
