@@ -27,7 +27,7 @@ import {
   MessageCircle,
   Upload,
 } from "lucide-react";
-import { supabase, isConfigured } from "./lib/supabaseClient";
+import { supabase, isConfigured } from "./lib/supabaseClient.js";
 import SupabaseSetupScreen from "./SupabaseSetupScreen";
 
 const PRODUCT_ICONS = { Rocket, Orbit, Zap, Cloud, Box, Package, Sunrise, Gem, CircleDot, Star, Share2, Triangle, Circle };
