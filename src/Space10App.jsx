@@ -27,7 +27,7 @@ import {
   MessageCircle,
   Upload,
 } from "lucide-react";
-import { supabase, isConfigured } from "./supabaseClient";
+import { supabase, isConfigured } from "./lib/supabaseClient";
 import SupabaseSetupScreen from "./SupabaseSetupScreen";
 
 const PRODUCT_ICONS = { Rocket, Orbit, Zap, Cloud, Box, Package, Sunrise, Gem, CircleDot, Star, Share2, Triangle, Circle };
@@ -478,7 +478,7 @@ function TeamTab({ profile }) {
   const [downlineLoading, setDownlineLoading] = useState(true);
   const [downlineError, setDownlineError] = useState("");
   const code = profile.referral_code;
-  const inviteLink = `\( {window.location.origin}/register?ref= \){code}`;
+  const inviteLink = `${window.location.origin}/register?ref=${code}`;
 
   useEffect(() => {
     let mounted = true;
@@ -805,8 +805,12 @@ function WithdrawModal({ onClose, onSubmit, defaultPhone }) {
   );
 }
 
-function MineTab({ profile, transactions, onDeposit, onWithdraw }) {
+function MineTab({ profile, transactions, userProducts, onDeposit, onWithdraw }) {
   const [modal, setModal] = useState(null); // 'deposit' | 'withdraw' | null
+  const [filter, setFilter] = useState("all"); // 'all' | 'deposit' | 'withdrawal'
+  const hasPurchased = userProducts.length > 0;
+
+  const filteredTransactions = filter === "all" ? transactions : transactions.filter((tx) => tx.type === filter);
 
   return (
     <div style={{ position: "relative" }}>
@@ -820,18 +824,56 @@ function MineTab({ profile, transactions, onDeposit, onWithdraw }) {
           <PrimaryButton tone="mint" onClick={() => setModal("deposit")} style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <ArrowDownRight size={15} /> Deposit
           </PrimaryButton>
-          <PrimaryButton tone="coral" onClick={() => setModal("withdraw")} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <PrimaryButton
+            tone="coral"
+            onClick={() => hasPurchased && setModal("withdraw")}
+            disabled={!hasPurchased}
+            style={{ display: "flex", alignItems: "center", gap: 6 }}
+          >
             <ArrowUpRight size={15} /> Withdraw
           </PrimaryButton>
         </div>
+        {!hasPurchased && (
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: tokens.textMuted, marginTop: 10 }}>
+            Buy a product first to unlock withdrawals.
+          </div>
+        )}
       </Card>
 
-      <SectionTitle>Transaction history</SectionTitle>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <SectionTitle>Transaction history</SectionTitle>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {[
+          { key: "all", label: "All" },
+          { key: "deposit", label: "Deposits" },
+          { key: "withdrawal", label: "Withdrawals" },
+        ].map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            style={{
+              padding: "6px 14px",
+              borderRadius: 999,
+              border: `1px solid ${filter === f.key ? tokens.accentMint : tokens.border}`,
+              background: filter === f.key ? `${tokens.accentMint}22` : "transparent",
+              color: filter === f.key ? tokens.accentMint : tokens.textMuted,
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {transactions.length === 0 && (
+        {filteredTransactions.length === 0 && (
           <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: tokens.textMuted }}>No transactions yet.</div>
         )}
-        {transactions.map((tx) => {
+        {filteredTransactions.map((tx) => {
           const isCredit = ["deposit", "bonus", "daily_profit", "referral"].includes(tx.type);
           return (
             <div key={tx.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", borderBottom: `1px solid ${tokens.border}` }}>
@@ -859,7 +901,7 @@ function MineTab({ profile, transactions, onDeposit, onWithdraw }) {
       </div>
 
       {modal === "deposit" && <DepositModal onClose={() => setModal(null)} onSubmit={onDeposit} defaultPhone={profile.phone_number} />}
-      {modal === "withdraw" && <WithdrawModal onClose={() => setModal(null)} onSubmit={onWithdraw} defaultPhone={profile.phone_number} />}
+      {modal === "withdraw" && hasPurchased && <WithdrawModal onClose={() => setModal(null)} onSubmit={onWithdraw} defaultPhone={profile.phone_number} />}
     </div>
   );
 }
@@ -918,6 +960,7 @@ function AdminConsole({ onLogout }) {
   const [error, setError] = useState("");
   const [actioningId, setActioningId] = useState(null);
   const [uploadingProductId, setUploadingProductId] = useState(null);
+  const [stats, setStats] = useState({ deposited: 0, invested: 0, withdrawn: 0 });
 
   const loadPending = useCallback(async () => {
     setError("");
@@ -959,19 +1002,34 @@ function AdminConsole({ onLogout }) {
     setProducts(data || []);
   }, []);
 
+  const loadStats = useCallback(async () => {
+    const [{ data: approvedDeposits }, { data: purchases }, { data: approvedWithdrawals }] = await Promise.all([
+      supabase.from("deposits").select("amount").eq("status", "approved"),
+      supabase.from("user_products").select("price"),
+      supabase.from("withdrawals").select("net_amount").eq("status", "approved"),
+    ]);
+    setStats({
+      deposited: (approvedDeposits || []).reduce((sum, d) => sum + Number(d.amount), 0),
+      invested: (purchases || []).reduce((sum, p) => sum + Number(p.price), 0),
+      withdrawn: (approvedWithdrawals || []).reduce((sum, w) => sum + Number(w.net_amount), 0),
+    });
+  }, []);
+
   useEffect(() => {
     loadPending();
     loadUsers();
     loadProducts();
+    loadStats();
     const channel = supabase
       .channel("admin-pending")
-      .on("postgres_changes", { event: "*", schema: "public", table: "deposits" }, () => loadPending())
-      .on("postgres_changes", { event: "*", schema: "public", table: "withdrawals" }, () => loadPending())
+      .on("postgres_changes", { event: "*", schema: "public", table: "deposits" }, () => { loadPending(); loadStats(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "withdrawals" }, () => { loadPending(); loadStats(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadUsers())
       .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => loadProducts())
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_products" }, () => loadStats())
       .subscribe();
     return () => supabase.removeChannel(channel);
-  }, [loadPending, loadUsers, loadProducts]);
+  }, [loadPending, loadUsers, loadProducts, loadStats]);
 
   const handleImageUpload = async (product, file) => {
     if (!file) return;
@@ -987,8 +1045,9 @@ function AdminConsole({ onLogout }) {
     setUploadingProductId(product.id);
     setError("");
     try {
+      const previousImageUrl = product.image_url;
       const ext = file.name.split(".").pop() || "jpg";
-      const path = `\( {product.id}- \){Date.now()}.${ext}`;
+      const path = `${product.id}-${Date.now()}.${ext}`;
 
       const { error: uploadErr } = await supabase.storage
         .from("product-images")
@@ -1002,6 +1061,15 @@ function AdminConsole({ onLogout }) {
         .update({ image_url: publicUrlData.publicUrl })
         .eq("id", product.id);
       if (updateErr) throw updateErr;
+
+      // Clean up the old photo now that the new one is live -- otherwise
+      // every replace leaves an orphaned file sitting in storage forever.
+      if (previousImageUrl) {
+        const previousPath = previousImageUrl.split("/product-images/")[1];
+        if (previousPath) {
+          await supabase.storage.from("product-images").remove([previousPath]);
+        }
+      }
 
       await loadProducts();
     } catch (err) {
@@ -1035,6 +1103,33 @@ function AdminConsole({ onLogout }) {
         <GhostButton onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px" }}>
           <LogOut size={14} /> Log out
         </GhostButton>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 22 }}>
+        <Card style={{ padding: 14 }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: tokens.textMuted }}>Total deposited</div>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 17, color: tokens.accentMint, fontWeight: 700, marginTop: 4 }}>
+            {formatUGX(stats.deposited)}
+          </div>
+        </Card>
+        <Card style={{ padding: 14 }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: tokens.textMuted }}>Total invested</div>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 17, color: tokens.accentGold, fontWeight: 700, marginTop: 4 }}>
+            {formatUGX(stats.invested)}
+          </div>
+        </Card>
+        <Card style={{ padding: 14 }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: tokens.textMuted }}>Total withdrawn</div>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 17, color: tokens.accentCoral, fontWeight: 700, marginTop: 4 }}>
+            {formatUGX(stats.withdrawn)}
+          </div>
+        </Card>
+        <Card style={{ padding: 14 }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: tokens.textMuted }}>Total users</div>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 17, color: tokens.textPrimary, fontWeight: 700, marginTop: 4 }}>
+            {users.length}
+          </div>
+        </Card>
       </div>
 
       <SectionTitle sub="Every registered account, live. The earliest signup is marked #1.">All users ({users.length})</SectionTitle>
@@ -1287,16 +1382,25 @@ export default function Space10App() {
     setTab("home");
   }, []);
 
-  // Product catalog rarely changes -- load it once configuration/session
-  // is ready, independent of the per-user data above.
+  // Product catalog rarely changes content-wise, but photos get updated by
+  // admins at any time -- subscribe so a newly-uploaded image (or any other
+  // product edit) shows up immediately, not just after a reload.
   useEffect(() => {
     if (!configured) return;
-    supabase
-      .from("products")
-      .select("*")
-      .eq("is_active", true)
-      .order("price", { ascending: true })
-      .then(({ data }) => setProducts(data || []));
+    const loadProducts = () => {
+      supabase
+        .from("products")
+        .select("*")
+        .eq("is_active", true)
+        .order("price", { ascending: true })
+        .then(({ data }) => setProducts(data || []));
+    };
+    loadProducts();
+    const channel = supabase
+      .channel("products-catalog")
+      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, loadProducts)
+      .subscribe();
+    return () => supabase.removeChannel(channel);
   }, [configured]);
 
   // Whenever the session changes, (re)load profile + transaction data.
@@ -1503,7 +1607,7 @@ export default function Space10App() {
             {tab === "home" && <HomeTab products={products} balance={profile.balance} profile={profile} onCheckin={handleDailyCheckin} onPurchase={handlePurchase} />}
             {tab === "product" && <MyProductTab userProducts={userProducts} />}
             {tab === "team" && <TeamTab profile={profile} />}
-            {tab === "mine" && <MineTab profile={profile} transactions={transactions} onDeposit={handleDeposit} onWithdraw={handleWithdraw} />}
+            {tab === "mine" && <MineTab profile={profile} transactions={transactions} userProducts={userProducts} onDeposit={handleDeposit} onWithdraw={handleWithdraw} />}
           </div>
 
           <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", justifyContent: "space-around", padding: "10px 8px 14px", background: tokens.bgPanel, borderTop: `1px solid ${tokens.border}` }}>
@@ -1521,4 +1625,4 @@ export default function Space10App() {
       )}
     </div>
   );
-      }
+}
