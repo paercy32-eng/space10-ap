@@ -478,7 +478,7 @@ function TeamTab({ profile }) {
   const [downlineLoading, setDownlineLoading] = useState(true);
   const [downlineError, setDownlineError] = useState("");
   const code = profile.referral_code;
-  const inviteLink = `${window.location.origin}/register?ref=${code}`;
+  const inviteLink = `${window.location.origin}/?ref=${code}`;
 
   useEffect(() => {
     let mounted = true;
