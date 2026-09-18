@@ -477,6 +477,8 @@ function TeamTab({ profile }) {
   const [downline, setDownline] = useState({ 1: [], 2: [], 3: [] });
   const [downlineLoading, setDownlineLoading] = useState(true);
   const [downlineError, setDownlineError] = useState("");
+  const [summary, setSummary] = useState({ total_referrals: 0, total_bonus: 0 });
+  const [showTeam, setShowTeam] = useState(false);
   const code = profile.referral_code;
   const inviteLink = `${window.location.origin}/?ref=${code}`;
 
@@ -495,9 +497,20 @@ function TeamTab({ profile }) {
         }
         setDownlineLoading(false);
       });
-    return () => {
-      mounted = false;
-    };
+
+    supabase
+      .rpc("get_my_referral_summary")
+      .then(({ data, error }) => {
+        if (!mounted) return;
+        if (!error && data && data[0]) {
+          setSummary({
+            total_referrals: data[0].total_referrals || 0,
+            total_bonus: Number(data[0].total_bonus || 0)
+          });
+        }
+      });
+
+    return () => { mounted = false; };
   }, []);
 
   const copyToClipboard = (text, setFlag) => {
@@ -512,14 +525,45 @@ function TeamTab({ profile }) {
     { level: 3, pct: "1%" },
   ];
 
+  const allReferrals = [
+    ...downline[1].map(u => ({ ...u, lvl: 1 })),
+    ...downline[2].map(u => ({ ...u, lvl: 2 })),
+    ...downline[3].map(u => ({ ...u, lvl: 3 }))
+  ];
+
   return (
     <div>
-      <SectionTitle sub="Invite others using your code or link.">Team</SectionTitle>
+      <SectionTitle sub="Invite others using your code or link.">Referrals</SectionTitle>
 
+      {/* Summary Card */}
       <Card style={{ marginBottom: 14 }}>
-        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: tokens.textMuted }}>Your referral code</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={{ background: tokens.bgRaised, borderRadius: 12, padding: 16, textAlign: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 6 }}>
+              <Users size={14} color={tokens.accentMint} />
+              <span style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: tokens.textMuted }}>My Referrals</span>
+            </div>
+            <div style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: 26, color: tokens.textPrimary, fontWeight: 700 }}>
+              {summary.total_referrals}
+            </div>
+          </div>
+          <div style={{ background: tokens.bgRaised, borderRadius: 12, padding: 16, textAlign: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 6 }}>
+              <Sparkles size={14} color={tokens.accentGold} />
+              <span style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: tokens.textMuted }}>Referral Bonus</span>
+            </div>
+            <div style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: 22, color: tokens.accentMint, fontWeight: 700 }}>
+              {formatUGX(summary.total_bonus)}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Invitation Code */}
+      <Card style={{ marginBottom: 14 }}>
+        <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: tokens.textMuted }}>Invitation Code</div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
-          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, color: tokens.textPrimary, fontWeight: 600 }}>{code}</div>
+          <div style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: 20, color: tokens.textPrimary, fontWeight: 600 }}>{code}</div>
           <GhostButton onClick={() => copyToClipboard(code, setCodeCopied)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px" }}>
             {codeCopied ? <Check size={14} color={tokens.accentMint} /> : <Copy size={14} />}
             {codeCopied ? "Copied" : "Copy"}
@@ -527,63 +571,104 @@ function TeamTab({ profile }) {
         </div>
       </Card>
 
+      {/* Invitation Link */}
       <Card style={{ marginBottom: 14 }}>
-        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: tokens.textMuted }}>Your invitation link</div>
+        <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: tokens.textMuted }}>Invitation Link</div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, gap: 10 }}>
-          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: tokens.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {inviteLink}
-          </div>
-          <GhostButton onClick={() => copyToClipboard(inviteLink, setLinkCopied)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", flexShrink: 0 }}>
+          <div style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: tokens.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{inviteLink}</div>
+          <GhostButton onClick={() => copyToClipboard(inviteLink, setLinkCopied)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px" }}>
             {linkCopied ? <Check size={14} color={tokens.accentMint} /> : <Copy size={14} />}
             {linkCopied ? "Copied" : "Copy"}
           </GhostButton>
         </div>
       </Card>
 
+      {/* WhatsApp Group */}
       <a href={WHATSAPP_GROUP_URL} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
-        <Card style={{ marginBottom: 18, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <Card style={{ marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <MessageCircle size={20} color={tokens.accentMint} />
-            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: tokens.textPrimary, fontWeight: 600 }}>
-              Join our WhatsApp Group
-            </div>
+            <div style={{ fontFamily: "Inter, sans-serif", fontSize: 14, color: tokens.textPrimary, fontWeight: 600 }}>Join our WhatsApp Group</div>
           </div>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: tokens.accentMint }}>Open →</span>
+          <span style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: tokens.accentMint }}>Open →</span>
         </Card>
       </a>
 
-      {levels.map(({ level, pct }) => (
-        <div key={level} style={{ marginBottom: 18 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: tokens.textPrimary, fontWeight: 600 }}>Level {level}</div>
-            <Pill tone="gold">{pct} commission</Pill>
+      {/* Referral Levels */}
+      <Card style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: 16, color: tokens.textPrimary, fontWeight: 700 }}>Referral Levels</div>
+            <div style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: tokens.textMuted, marginTop: 4 }}>Team commission overview</div>
           </div>
-          {downlineLoading ? (
-            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: tokens.textMuted }}>Loading…</div>
-          ) : downlineError ? (
-            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: tokens.accentCoral }}>{downlineError}</div>
-          ) : downline[level].length === 0 ? (
-            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: tokens.textMuted }}>No referrals yet.</div>
+          <PrimaryButton onClick={() => setShowTeam(!showTeam)} style={{ padding: "10px 20px", fontSize: 13 }}>
+            <Users size={14} /> {showTeam ? "Hide Team" : "Team"}
+          </PrimaryButton>
+        </div>
+
+        {downlineLoading ? (
+          <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: tokens.textMuted }}>Loading...</div>
+        ) : downlineError ? (
+          <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: tokens.accentCoral }}>{downlineError}</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {levels.map(({ level, pct }) => {
+              const list = downline[level] || [];
+              const earned = list.reduce((sum, u) => {
+                const invested = Number(u.total_invested || 0);
+                const rate = level === 1 ? 0.20 : level === 2 ? 0.02 : 0.01;
+                return sum + Math.floor(invested * rate);
+              }, 0);
+              const colors = { 1: tokens.accentMint, 2: "#3B82F6", 3: tokens.accentGold };
+              return (
+                <div key={level} style={{ background: tokens.bgRaised, borderRadius: 12, padding: 14, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 44, height: 44, borderRadius: 22, background: colors[level], display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontFamily: "Space Grotesk, sans-serif", fontSize: 16, fontWeight: 700 }}>{level}</div>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: 15, color: tokens.textPrimary, fontWeight: 700 }}>LV{level}</span>
+                        <span style={{ background: `${colors[level]}33`, color: colors[level], padding: "2px 8px", borderRadius: 6, fontFamily: "Inter, sans-serif", fontSize: 11, fontWeight: 600 }}>{pct}</span>
+                      </div>
+                      <div style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: tokens.textMuted, marginTop: 2 }}>Commission</div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: 14, color: tokens.textPrimary, fontWeight: 600 }}>{list.length} {list.length === 1 ? "Person" : "People"}</div>
+                    <div style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: 13, color: tokens.accentMint, fontWeight: 600, marginTop: 2 }}>{formatUGX(earned)}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      {/* Team List (only when showTeam is true) */}
+      {showTeam && (
+        <Card style={{ marginBottom: 14 }}>
+          <div style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: 15, color: tokens.textPrimary, fontWeight: 700, marginBottom: 12 }}>My Team</div>
+          {allReferrals.length === 0 ? (
+            <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: tokens.textMuted }}>No referrals yet.</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {downline[level].map((u) => (
-                <Card key={u.id} style={{ padding: 12 }}>
-                  <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 14, color: tokens.textPrimary, fontWeight: 600 }}>
-                    {u.full_name || u.phone_number}
+              {allReferrals.map((u) => (
+                <div key={u.id} style={{ background: tokens.bgRaised, borderRadius: 10, padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: 14, color: tokens.textPrimary, fontWeight: 600 }}>{u.full_name || u.phone_number}</div>
+                    <div style={{ fontFamily: "Inter, sans-serif", fontSize: 11, color: tokens.textMuted, marginTop: 2 }}>{u.phone_number} · LV{u.lvl} · Joined {new Date(u.created_at).toLocaleDateString()}</div>
                   </div>
-                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: tokens.textMuted, marginTop: 2 }}>
-                    Joined {new Date(u.created_at).toLocaleDateString()}
-                  </div>
-                </Card>
+                  <span style={{ background: u.has_purchased ? `${tokens.accentMint}33` : `${tokens.textMuted}22`, color: u.has_purchased ? tokens.accentMint : tokens.textMuted, padding: "4px 10px", borderRadius: 20, fontFamily: "Inter, sans-serif", fontSize: 10, fontWeight: 700, textTransform: "uppercase" }}>
+                    {u.has_purchased ? "Invested" : "Not Invested"}
+                  </span>
+                </div>
               ))}
             </div>
           )}
-        </div>
-      ))}
+        </Card>
+      )}
     </div>
   );
-}
-
+                     }
 function ModalShell({ title, onClose, children }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(10,11,26,0.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 10 }}>
