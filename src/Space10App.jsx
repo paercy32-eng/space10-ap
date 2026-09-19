@@ -48,7 +48,7 @@ const NETWORKS = {
   AIRTEL: { label: "Airtel Money", code: "7192512", name: "Essentials limited", ussd: "*185*9#" },
   MTN: { label: "MTN MoMo", code: "44867602", name: "Nabirye Flavia", ussd: "*165*3#" },
 };
-const MIN_DEPOSIT = 8000;
+const MIN_DEPOSIT = 10000;
 const MIN_WITHDRAWAL = 4000;
 const WITHDRAWAL_FEE_RATE = 0.14;
 
