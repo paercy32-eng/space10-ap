@@ -32,26 +32,6 @@ import SupabaseSetupScreen from "./SupabaseSetupScreen";
 
 const PRODUCT_ICONS = { Rocket, Orbit, Zap, Cloud, Box, Package, Sunrise, Gem, CircleDot, Star, Share2, Triangle, Circle };
 
-// ---------------------------------------------------------------------------
-// This is the real, Supabase-backed version of the app.
-//
-// REAL (backed by your Supabase project):
-//   - Login / Register           -> supabase.auth (phone + password)
-//   - Signup bonus (3,000 UGX)   -> credited automatically by a DB trigger
-//   - Daily check-in (200 UGX)   -> supabase.rpc('claim_daily_checkin'), once/day
-//   - Wallet balance             -> profiles.balance, live via Realtime
-//   - Deposit                    -> direct insert into deposits table, admin-verified (no Edge Functions -- RPCs are called straight from the client)
-//   - Withdraw                   -> supabase.rpc('request_withdrawal'), 14% fee held immediately, admin-verified payout
-//   - Transaction history        -> merged from deposits + withdrawals + daily_checkins tables, live via Realtime
-//   - Admin approve/reject       -> supabase.rpc('approve_deposit' / 'reject_deposit' / 'approve_withdrawal' / 'reject_withdrawal')
-//
-// STILL PREVIEW ONLY (no backend table/RPC exists yet -- flagged in the UI
-// with a "Preview" pill so nothing fake is presented as real):
-//   - Product catalog + "Buy now"  (no products/purchases table)
-//   - Team downline levels          (no referral RPC yet -- code + link ARE real)
-//   - Admin totals (users/deposits/invested/paid out) (no stats endpoint yet)
-// ---------------------------------------------------------------------------
-
 const tokens = {
   bgDeep: "#0E1029",
   bgPanel: "#161A3B",
@@ -77,8 +57,6 @@ function formatUGX(amount) {
   return `UGX ${rounded.toLocaleString()}`;
 }
 
-// Accepts 07XXXXXXXX, 2567XXXXXXXX, or +2567XXXXXXXX and normalizes to the
-// +256XXXXXXXXX format used everywhere in the UI and passed to Mobile Money.
 function normalizePhoneUG(input) {
   const trimmed = (input || "").trim();
   const digits = trimmed.replace(/\D/g, "");
@@ -89,27 +67,13 @@ function normalizePhoneUG(input) {
   return normalized && /^\+256\d{9}$/.test(normalized) ? normalized : null;
 }
 
-// Supabase's Phone auth provider requires an SMS provider (Twilio, etc.)
-// to be configured, which this project doesn't have -- attempting
-// supabase.auth.signUp({ phone }) on a project without it enabled fails
-// with "Phone signups are disabled". Workaround: authenticate with Email
-// auth instead, using a synthetic, non-deliverable email derived from the
-// phone number as the "email" Supabase's auth system requires. The real
-// phone number is never lost -- it's stored in both the signup metadata
-// and profiles.phone_number (via the handle_new_user trigger), and is
-// what's actually shown anywhere in the UI. Nobody ever sees or needs
-// this synthetic address; it only exists to satisfy Supabase Auth's
-// email-shaped identifier.
 function phoneToAuthEmail(normalizedPhone) {
-  const digits = normalizedPhone.replace(/\D/g, ""); // "+256701234567" -> "256701234567"
+  const digits = normalizedPhone.replace(/\D/g, "");
   return `${digits}@space10.vercel.app`;
 }
 
 const WHATSAPP_GROUP_URL = "https://chat.whatsapp.com/EysSGOrzIyC6agfTmIt5ip?s=cl&p=a&mlu=4&ilr=4";
 
-// ---------------------------------------------------------------------------
-// Shared UI
-// ---------------------------------------------------------------------------
 function Card({ children, style }) {
   return (
     <div style={{ background: tokens.bgPanel, border: `1px solid ${tokens.border}`, borderRadius: 16, padding: 18, ...style }}>
@@ -206,9 +170,6 @@ function FieldInput({ label, ...props }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Auth screens
-// ---------------------------------------------------------------------------
 function AuthShell({ children }) {
   return (
     <div style={{ padding: "60px 24px", display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -281,9 +242,6 @@ function LoginScreen({ onLogin, goToRegister, onOpenSetup, error, notice, busy }
   );
 }
 
-// ---------------------------------------------------------------------------
-// User-facing tabs
-// ---------------------------------------------------------------------------
 function ProductArt({ icon, gradient, imageUrl }) {
   const Icon = PRODUCT_ICONS[icon] || Package;
 
@@ -535,7 +493,6 @@ function TeamTab({ profile }) {
     <div>
       <SectionTitle sub="Invite others using your code or link.">Referrals</SectionTitle>
 
-      {/* Summary Card */}
       <Card style={{ marginBottom: 14 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div style={{ background: tokens.bgRaised, borderRadius: 12, padding: 16, textAlign: "center" }}>
@@ -559,7 +516,6 @@ function TeamTab({ profile }) {
         </div>
       </Card>
 
-      {/* Invitation Code */}
       <Card style={{ marginBottom: 14 }}>
         <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: tokens.textMuted }}>Invitation Code</div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
@@ -571,7 +527,6 @@ function TeamTab({ profile }) {
         </div>
       </Card>
 
-      {/* Invitation Link */}
       <Card style={{ marginBottom: 14 }}>
         <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: tokens.textMuted }}>Invitation Link</div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, gap: 10 }}>
@@ -583,7 +538,6 @@ function TeamTab({ profile }) {
         </div>
       </Card>
 
-      {/* WhatsApp Group */}
       <a href={WHATSAPP_GROUP_URL} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
         <Card style={{ marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -594,7 +548,6 @@ function TeamTab({ profile }) {
         </Card>
       </a>
 
-      {/* Referral Levels */}
       <Card style={{ marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <div>
@@ -643,7 +596,6 @@ function TeamTab({ profile }) {
         )}
       </Card>
 
-      {/* Team List (only when showTeam is true) */}
       {showTeam && (
         <Card style={{ marginBottom: 14 }}>
           <div style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: 15, color: tokens.textPrimary, fontWeight: 700, marginBottom: 12 }}>My Team</div>
@@ -668,7 +620,8 @@ function TeamTab({ profile }) {
       )}
     </div>
   );
-                     }
+}
+
 function ModalShell({ title, onClose, children }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(10,11,26,0.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 10 }}>
@@ -694,11 +647,6 @@ function ModalInput(props) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Deposit: 4-step manual Mobile Money flow.
-//   1. amount + phone -> 2. pick network, see merchant code + dial string
-//   -> 3. enter the Mobile Money TXID -> 4. "wait for verification"
-// ---------------------------------------------------------------------------
 function DepositModal({ onClose, onSubmit, defaultPhone }) {
   const [step, setStep] = useState(1);
   const [amount, setAmount] = useState("");
@@ -828,9 +776,6 @@ function DepositModal({ onClose, onSubmit, defaultPhone }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Withdrawal: amount + phone + full name, fee shown live before confirming.
-// ---------------------------------------------------------------------------
 function WithdrawModal({ onClose, onSubmit, defaultPhone }) {
   const [amount, setAmount] = useState("");
   const [phone, setPhone] = useState(defaultPhone || "");
@@ -891,8 +836,8 @@ function WithdrawModal({ onClose, onSubmit, defaultPhone }) {
 }
 
 function MineTab({ profile, transactions, userProducts, onDeposit, onWithdraw }) {
-  const [modal, setModal] = useState(null); // 'deposit' | 'withdraw' | null
-  const [filter, setFilter] = useState("all"); // 'all' | 'deposit' | 'withdrawal'
+  const [modal, setModal] = useState(null);
+  const [filter, setFilter] = useState("all");
   const hasPurchased = userProducts.length > 0;
 
   const filteredTransactions = filter === "all" ? transactions : transactions.filter((tx) => tx.type === filter);
@@ -991,9 +936,6 @@ function MineTab({ profile, transactions, userProducts, onDeposit, onWithdraw })
   );
 }
 
-// ---------------------------------------------------------------------------
-// Admin console -- pending withdrawals are real; totals are not yet built.
-// ---------------------------------------------------------------------------
 function PendingCard({ item, kind, actioningId, onApprove, onReject }) {
   const busy = actioningId === item.id;
   return (
@@ -1064,7 +1006,6 @@ function AdminConsole({ onLogout }) {
       ]);
       if (depositErr || withdrawalErr) throw new Error((depositErr || withdrawalErr).message);
 
-      // Normalize each table's column names into the shape PendingCard expects.
       setDeposits((depositRows || []).map((d) => ({ ...d, txid: d.transaction_id })));
       setWithdrawals((withdrawalRows || []).map((w) => ({ ...w, fee_amount: w.fee })));
     } catch (err) {
@@ -1147,8 +1088,6 @@ function AdminConsole({ onLogout }) {
         .eq("id", product.id);
       if (updateErr) throw updateErr;
 
-      // Clean up the old photo now that the new one is live -- otherwise
-      // every replace leaves an orphaned file sitting in storage forever.
       if (previousImageUrl) {
         const previousPath = previousImageUrl.split("/product-images/")[1];
         if (previousPath) {
@@ -1331,9 +1270,6 @@ function AdminConsole({ onLogout }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// App shell
-// ---------------------------------------------------------------------------
 function getReferralCodeFromUrl() {
   try {
     return new URLSearchParams(window.location.search).get("ref") || "";
@@ -1352,16 +1288,12 @@ export default function Space10App() {
   const [products, setProducts] = useState([]);
   const [userProducts, setUserProducts] = useState([]);
   const [referralCodeFromUrl] = useState(getReferralCodeFromUrl);
-  // A link like /register?ref=CODE should land straight on the Register
-  // form, pre-filled -- not require an extra tap from the login screen.
-  const [screen, setScreen] = useState(() => (getReferralCodeFromUrl() ? "register" : "login")); // login | register | app | admin
+  const [screen, setScreen] = useState(() => (getReferralCodeFromUrl() ? "register" : "login"));
   const [tab, setTab] = useState("home");
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
 
-  // Restore/track the Supabase auth session. Skipped entirely until
-  // configuration exists -- there's no client to call yet otherwise.
   useEffect(() => {
     if (!configured) {
       setInitializing(false);
@@ -1406,8 +1338,6 @@ export default function Space10App() {
       return;
     }
 
-    // Every category above lives in its own table -- merge them into one
-    // feed for the Transaction history list.
     const merged = [
       ...(deposits || []).map((d) => ({
         id: `deposit-${d.id}`,
@@ -1467,9 +1397,6 @@ export default function Space10App() {
     setTab("home");
   }, []);
 
-  // Product catalog rarely changes content-wise, but photos get updated by
-  // admins at any time -- subscribe so a newly-uploaded image (or any other
-  // product edit) shows up immediately, not just after a reload.
   useEffect(() => {
     if (!configured) return;
     const loadProducts = () => {
@@ -1488,7 +1415,6 @@ export default function Space10App() {
     return () => supabase.removeChannel(channel);
   }, [configured]);
 
-  // Whenever the session changes, (re)load profile + transaction data.
   useEffect(() => {
     if (initializing) return;
     if (!session) {
@@ -1500,10 +1426,6 @@ export default function Space10App() {
     loadProfileAndTransactions(session.user.id);
   }, [session, initializing, loadProfileAndTransactions]);
 
-  // Live updates: reflect admin approvals/rejections, purchases, and
-  // scheduled daily-earnings/referral credits without the user needing to
-  // refresh -- each category lives in its own table, so each gets its own
-  // filtered subscription.
   useEffect(() => {
     if (!session) return;
     const uid = session.user.id;
@@ -1551,7 +1473,6 @@ export default function Space10App() {
     setAuthBusy(false);
 
     if (error) return setAuthError(error.message);
-    // Profile load + routing happens in the session effect above.
   };
 
   const handleLogout = async () => {
@@ -1561,9 +1482,6 @@ export default function Space10App() {
     setScreen("login");
   };
 
-  // All three now talk to Supabase directly (table insert / RPC) -- no Edge
-  // Functions in this architecture. Each throws on failure so the
-  // deposit/withdraw modals' own try/catch can show the error inline.
   const handleDeposit = async (value, phoneInput, network, txid) => {
     const normalizedPhone = normalizePhoneUG(phoneInput);
     if (!normalizedPhone) throw new Error("Enter a valid Ugandan phone number, e.g. 0712345678.");
@@ -1590,6 +1508,7 @@ export default function Space10App() {
       p_amount: value,
       p_phone: normalizedPhone,
       p_name: fullName,
+      p_user_id: session.user.id,
     });
     if (error) throw new Error(error.message);
     if (!data?.success) throw new Error(data?.message || "Withdrawal request failed.");
@@ -1606,8 +1525,12 @@ export default function Space10App() {
   };
 
   const handlePurchase = async (productId) => {
-    const { error } = await supabase.rpc("purchase_product", { p_product_id: productId });
+    const { data, error } = await supabase.rpc("purchase_product", {
+      p_product_id: productId,
+      p_user_id: session.user.id,
+    });
     if (error) throw new Error(error.message);
+    if (!data?.success) throw new Error(data?.message || "Purchase failed.");
     await loadProfileAndTransactions(session.user.id);
   };
 
@@ -1710,4 +1633,4 @@ export default function Space10App() {
       )}
     </div>
   );
-}
+                         }
